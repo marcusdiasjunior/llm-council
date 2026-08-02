@@ -2,7 +2,7 @@
 
 import httpx
 from typing import List, Dict, Any, Optional
-from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL
+from .config import OPENROUTER_API_KEY, OPENROUTER_API_URL, PROVIDER_DENYLIST
 
 
 async def query_model(
@@ -29,7 +29,17 @@ async def query_model(
     payload = {
         "model": model,
         "messages": messages,
+        # Never route to providers that store or train on prompts.
+        # Note: OpenRouter does not route on provider *retention* policies, only
+        # on this data policy, so providers that retain (but don't train) are
+        # still eligible. See PROVIDER_DENYLIST in config.py to exclude those.
+        "provider": {
+            "data_collection": "deny",
+        },
     }
+
+    if PROVIDER_DENYLIST:
+        payload["provider"]["ignore"] = PROVIDER_DENYLIST
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:

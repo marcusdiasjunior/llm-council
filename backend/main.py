@@ -70,13 +70,30 @@ async def create_conversation(request: CreateConversationRequest):
     return conversation
 
 
-@app.get("/api/conversations/{conversation_id}", response_model=Conversation)
-async def get_conversation(conversation_id: str):
-    """Get a specific conversation with all its messages."""
+def load_conversation_or_404(conversation_id: str) -> Dict[str, Any]:
+    """Load a conversation, rejecting malformed ids and misses with a 404."""
+    if not storage.is_valid_conversation_id(conversation_id):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
     conversation = storage.get_conversation(conversation_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
+
     return conversation
+
+
+@app.get("/api/conversations/{conversation_id}", response_model=Conversation)
+async def get_conversation(conversation_id: str):
+    """Get a specific conversation with all its messages."""
+    return load_conversation_or_404(conversation_id)
+
+
+@app.delete("/api/conversations/{conversation_id}")
+async def delete_conversation(conversation_id: str):
+    """Delete a conversation and everything stored with it."""
+    load_conversation_or_404(conversation_id)
+    storage.delete_conversation(conversation_id)
+    return {"status": "deleted", "id": conversation_id}
 
 
 @app.post("/api/conversations/{conversation_id}/message")
@@ -86,9 +103,7 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
     Returns the complete response with all stages.
     """
     # Check if conversation exists
-    conversation = storage.get_conversation(conversation_id)
-    if conversation is None:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    conversation = load_conversation_or_404(conversation_id)
 
     # Check if this is the first message
     is_first_message = len(conversation["messages"]) == 0
@@ -130,9 +145,7 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
     Returns Server-Sent Events as each stage completes.
     """
     # Check if conversation exists
-    conversation = storage.get_conversation(conversation_id)
-    if conversation is None:
-        raise HTTPException(status_code=404, detail="Conversation not found")
+    conversation = load_conversation_or_404(conversation_id)
 
     # Check if this is the first message
     is_first_message = len(conversation["messages"]) == 0
@@ -196,4 +209,6 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    # Loopback only: the API has no authentication, and conversations are
+    # readable by anyone who can reach the port. Do not bind to 0.0.0.0.
+    uvicorn.run(app, host="127.0.0.1", port=8001)

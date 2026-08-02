@@ -5,6 +5,18 @@ from .openrouter import query_models_parallel, query_model
 from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
 
 
+def warn_model_dropped(model: str, stage: str):
+    """
+    Report a model that didn't make it into a stage.
+
+    The council degrades gracefully when a model fails, which also means the
+    provider filters in config.py can quietly shrink the council. Say so out
+    loud instead of returning a smaller council that looks complete.
+    """
+    print(f"Warning: {model} dropped out of {stage} (failed, or no provider "
+          f"matched the data policy) - continuing without it")
+
+
 async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
     """
     Stage 1: Collect individual responses from all council models.
@@ -28,6 +40,8 @@ async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
                 "model": model,
                 "response": response.get('content', '')
             })
+        else:
+            warn_model_dropped(model, "stage 1")
 
     return stage1_results
 
@@ -108,6 +122,8 @@ Now provide your evaluation and ranking:"""
                 "ranking": full_text,
                 "parsed_ranking": parsed
             })
+        else:
+            warn_model_dropped(model, "stage 2")
 
     return stage2_results, label_to_model
 

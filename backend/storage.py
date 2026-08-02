@@ -2,6 +2,7 @@
 
 import json
 import os
+import uuid
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -13,8 +14,25 @@ def ensure_data_dir():
     Path(DATA_DIR).mkdir(parents=True, exist_ok=True)
 
 
+def is_valid_conversation_id(conversation_id: str) -> bool:
+    """
+    Check that an id is a well-formed UUID.
+
+    Conversation ids come straight from the URL and end up in a filesystem
+    path, so anything that isn't a UUID is rejected before it gets there.
+    """
+    try:
+        uuid.UUID(conversation_id)
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
 def get_conversation_path(conversation_id: str) -> str:
     """Get the file path for a conversation."""
+    if not is_valid_conversation_id(conversation_id):
+        raise ValueError(f"Invalid conversation id: {conversation_id!r}")
+
     return os.path.join(DATA_DIR, f"{conversation_id}.json")
 
 
@@ -62,6 +80,25 @@ def get_conversation(conversation_id: str) -> Optional[Dict[str, Any]]:
 
     with open(path, 'r') as f:
         return json.load(f)
+
+
+def delete_conversation(conversation_id: str) -> bool:
+    """
+    Delete a conversation from storage.
+
+    Args:
+        conversation_id: Unique identifier for the conversation
+
+    Returns:
+        True if a file was deleted, False if there was nothing to delete
+    """
+    path = get_conversation_path(conversation_id)
+
+    if not os.path.exists(path):
+        return False
+
+    os.remove(path)
+    return True
 
 
 def save_conversation(conversation: Dict[str, Any]):
