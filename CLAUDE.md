@@ -21,6 +21,12 @@ LLM Council is a 3-stage deliberation system where multiple LLMs collaboratively
 - `query_models_parallel()`: Parallel queries using `asyncio.gather()`
 - Returns dict with 'content' and optional 'reasoning_details'
 - Graceful degradation: returns None on failure, continues with successful responses
+- Every request sends `provider.data_collection: "deny"`, so OpenRouter won't
+  route to providers that store or train on prompts
+- Optional `PROVIDER_DENYLIST` in `config.py` becomes `provider.ignore`.
+  OpenRouter does **not** route on provider data *retention* — only on the data
+  policy above — so excluding providers that retain prompts requires listing
+  them explicitly. `config.py` has the query that returns current policies.
 
 **`council.py`** - The Core Logic
 - `stage1_collect_responses()`: Parallel queries to all council models
@@ -39,11 +45,19 @@ LLM Council is a 3-stage deliberation system where multiple LLMs collaboratively
 - Each conversation: `{id, created_at, messages[]}`
 - Assistant messages contain: `{role, stage1, stage2, stage3}`
 - Note: metadata (label_to_model, aggregate_rankings) is NOT persisted to storage, only returned via API
+- `is_valid_conversation_id()` gates every path build: ids arrive from the URL
+  and land in a filesystem path, so non-UUIDs are rejected before they get there
+- `delete_conversation()` removes the file; stored conversations are plaintext
+  and nothing expires them, so deleting is the only way they go away
 
 **`main.py`**
 - FastAPI app with CORS enabled for localhost:5173 and localhost:3000
 - POST `/api/conversations/{id}/message` returns metadata in addition to stages
 - Metadata includes: label_to_model mapping and aggregate_rankings
+- DELETE `/api/conversations/{id}` deletes a conversation (× button in Sidebar)
+- Binds **127.0.0.1**, not 0.0.0.0. There is no authentication on any endpoint,
+  so anything that can reach the port can read every conversation. CORS does not
+  help here — it's a browser rule, and curl ignores it.
 
 ### Frontend Structure (`frontend/src/`)
 
@@ -131,6 +145,11 @@ Models are hardcoded in `backend/config.py`. Chairman can be same or different f
 2. **CORS Issues**: Frontend must match allowed origins in `main.py` CORS middleware
 3. **Ranking Parse Failures**: If models don't follow format, fallback regex extracts any "Response X" patterns in order
 4. **Missing Metadata**: Metadata is ephemeral (not persisted), only available in API responses
+5. **Silently Shrinking Council**: A model with no provider matching the data
+   policy fails like any other error, and graceful degradation drops it — so the
+   council quietly gets smaller while still looking complete. `warn_model_dropped()`
+   in `council.py` logs each one; watch the backend output after narrowing
+   `PROVIDER_DENYLIST`.
 
 ## Future Enhancement Ideas
 
